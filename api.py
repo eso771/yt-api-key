@@ -1,12 +1,18 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse
 
-import aiohttp
+import yt_dlp
 import os
+import uuid
+import glob
 
 app = FastAPI()
 
 API_KEY = os.getenv("API_KEY")
+
+DOWNLOAD_DIR = "downloads"
+
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
 @app.get("/")
@@ -28,48 +34,63 @@ async def download(
             detail="Invalid API key"
         )
 
-    api = "https://api.cobalt.tools/api/json"
+    unique_id = str(uuid.uuid4())
 
-    payload = {
-        "url": url,
-        "isAudioOnly": type == "audio"
+    output_template = os.path.join(
+        DOWNLOAD_DIR,
+        f"{unique_id}.%(ext)s"
+    )
+
+    ydl_opts = {
+        "outtmpl": output_template,
+        "quiet": True,
+        "noplaylist": True,
+        "cookiefile": "cookies.txt"
     }
 
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0"
-    }
+    if type == "audio":
+
+        ydl_opts.update({
+            "format": "bestaudio/best",
+
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192"
+            }]
+        })
+
+    else:
+
+        ydl_opts.update({
+            "format": "bestvideo+bestaudio/best"
+        })
 
     try:
 
-        async with aiohttp.ClientSession() as session:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
-            async with session.post(
-                api,
-                json=payload,
-                headers=headers
-            ) as r:
-
-                text = await r.text()
-
-                print(text)
-
-                try:
-                    data = await r.json()
-                except:
-                    return JSONResponse({
-                        "error": text
-                    })
+            ydl.download([url])
 
     except Exception as e:
 
-        return JSONResponse({
-            "error": str(e)
-        })
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
-    if data.get("status") != "stream":
+    files = glob.glob(
+        os.path.join(
+            DOWNLOAD_DIR,
+            f"{unique_id}*"
+        )
+    )
 
-        return JSONResponse(data)
+    if not files:
 
-    return RedirectResponse(data["url"])
+        raise HTTPException(
+            status_code=500,
+            detail="Downloaded file not found"
+        )
+
+    return FileResponse(files[0])
