@@ -1,18 +1,12 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 
-import yt_dlp
+import aiohttp
 import os
-import uuid
-import glob
 
 app = FastAPI()
 
 API_KEY = os.getenv("API_KEY")
-
-DOWNLOAD_DIR = "downloads"
-
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
 @app.get("/")
@@ -34,68 +28,33 @@ async def download(
             detail="Invalid API key"
         )
 
-    unique_id = str(uuid.uuid4())
+    api = "https://co.wuk.sh/api/json"
 
-    output_template = os.path.join(
-        DOWNLOAD_DIR,
-        f"{unique_id}.%(ext)s"
-    )
-
-    ydl_opts = {
-        "outtmpl": output_template,
-        "quiet": True,
-        "noplaylist": True,
-
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
+    payload = {
+        "url": url,
+        "isAudioOnly": type == "audio"
     }
 
-    if type == "audio":
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
 
-        ydl_opts.update({
-            "format": "bestaudio/best",
+    async with aiohttp.ClientSession() as session:
 
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192"
-            }]
-        })
+        async with session.post(
+            api,
+            json=payload,
+            headers=headers
+        ) as r:
 
-    else:
+            data = await r.json()
 
-        ydl_opts.update({
-            "format": "bestvideo+bestaudio/best"
-        })
-
-    try:
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-
-            ydl.download([url])
-
-    except Exception as e:
+    if data.get("status") != "stream":
 
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Download failed"
         )
 
-    files = glob.glob(
-        os.path.join(
-            DOWNLOAD_DIR,
-            f"{unique_id}*"
-        )
-    )
-
-    if not files:
-
-        raise HTTPException(
-            status_code=500,
-            detail="Downloaded file not found"
-        )
-
-    return FileResponse(files[0])
+    return RedirectResponse(data["url"])
