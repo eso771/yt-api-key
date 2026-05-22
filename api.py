@@ -1,22 +1,24 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-
 import yt_dlp
 import os
 import uuid
-import glob
 
 app = FastAPI()
 
 API_KEY = os.getenv("API_KEY")
 DOWNLOAD_DIR = "downloads"
-
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
-@app.get("/")
-async def root():
-    return {"status": "API işləyir"}
+def get_cookie():
+    cookie_dir = "cookies"
+    try:
+        files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+        if not files:
+            return None
+        return os.path.join(cookie_dir, files[0])
+    except:
+        return None
 
 
 @app.get("/download")
@@ -25,33 +27,41 @@ async def download(url: str, type: str, api_key: str):
     if api_key != API_KEY:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
-    unique_id = str(uuid.uuid4())
+    uid = str(uuid.uuid4())
+    output = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
 
-    output_template = os.path.join(DOWNLOAD_DIR, f"{unique_id}.%(ext)s")
+    cookie_file = get_cookie()
 
     ydl_opts = {
-        "outtmpl": output_template,
+        "outtmpl": output,
         "quiet": True,
         "noplaylist": True,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        }
     }
 
-    if os.path.exists("cookies.txt"):
-        ydl_opts["cookiefile"] = "cookies.txt"
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     try:
         if type == "audio":
             ydl_opts.update({
                 "format": "bestaudio/best",
-                "prefer_ffmpeg": True,
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
                     "preferredquality": "192"
-                }]
+                }],
+                "prefer_ffmpeg": True,
             })
         else:
             ydl_opts.update({
-                "format": "bv*+ba/best"
+                "format": "bv*+ba/best[ext=mp4]/best"
             })
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -60,9 +70,9 @@ async def download(url: str, type: str, api_key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    files = glob.glob(os.path.join(DOWNLOAD_DIR, f"{unique_id}*"))
+    files = [f for f in os.listdir(DOWNLOAD_DIR) if uid in f]
 
     if not files:
-        raise HTTPException(status_code=500, detail="Downloaded file not found")
+        raise HTTPException(status_code=500, detail="File not found")
 
-    return FileResponse(files[0])
+    return os.path.join(DOWNLOAD_DIR, files[0])
