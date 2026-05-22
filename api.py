@@ -9,7 +9,6 @@ import glob
 app = FastAPI()
 
 API_KEY = os.getenv("API_KEY")
-
 DOWNLOAD_DIR = "downloads"
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -21,76 +20,49 @@ async def root():
 
 
 @app.get("/download")
-async def download(
-    url: str,
-    type: str,
-    api_key: str
-):
+async def download(url: str, type: str, api_key: str):
 
     if api_key != API_KEY:
-
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid API key"
-        )
+        raise HTTPException(status_code=403, detail="Invalid API key")
 
     unique_id = str(uuid.uuid4())
 
-    output_template = os.path.join(
-        DOWNLOAD_DIR,
-        f"{unique_id}.%(ext)s"
-    )
+    output_template = os.path.join(DOWNLOAD_DIR, f"{unique_id}.%(ext)s")
 
     ydl_opts = {
         "outtmpl": output_template,
         "quiet": True,
         "noplaylist": True,
-        "cookiefile": "cookies.txt"
     }
 
-    if type == "audio":
-
-        ydl_opts.update({
-            "format": "bestaudio/best",
-
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192"
-            }]
-        })
-
-    else:
-
-        ydl_opts.update({
-            "format": "bestvideo+bestaudio/best"
-        })
+    if os.path.exists("cookies.txt"):
+        ydl_opts["cookiefile"] = "cookies.txt"
 
     try:
+        if type == "audio":
+            ydl_opts.update({
+                "format": "bestaudio/best",
+                "prefer_ffmpeg": True,
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192"
+                }]
+            })
+        else:
+            ydl_opts.update({
+                "format": "bv*+ba/best"
+            })
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-
             ydl.download([url])
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
-    files = glob.glob(
-        os.path.join(
-            DOWNLOAD_DIR,
-            f"{unique_id}*"
-        )
-    )
+    files = glob.glob(os.path.join(DOWNLOAD_DIR, f"{unique_id}*"))
 
     if not files:
-
-        raise HTTPException(
-            status_code=500,
-            detail="Downloaded file not found"
-        )
+        raise HTTPException(status_code=500, detail="Downloaded file not found")
 
     return FileResponse(files[0])
