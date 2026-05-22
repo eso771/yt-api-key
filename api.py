@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 import yt_dlp
 import os
 import uuid
+import glob
 
 app = FastAPI()
 
@@ -27,6 +28,7 @@ async def download(
 ):
 
     if api_key != API_KEY:
+
         raise HTTPException(
             status_code=403,
             detail="Invalid API key"
@@ -34,29 +36,45 @@ async def download(
 
     unique_id = str(uuid.uuid4())
 
-    filepath = os.path.join(
+    output_template = os.path.join(
         DOWNLOAD_DIR,
-        unique_id
+        f"{unique_id}.%(ext)s"
     )
 
     ydl_opts = {
-        "outtmpl": filepath + ".%(ext)s",
-        "format": "bestaudio/best"
-        if type == "audio"
-        else "best"
+        "outtmpl": output_template,
+        "quiet": True,
+        "noplaylist": True,
+
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
+        }
     }
 
     if type == "audio":
 
-        ydl_opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192"
-        }]
+        ydl_opts.update({
+            "format": "bestaudio/best",
+
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192"
+            }]
+        })
+
+    else:
+
+        ydl_opts.update({
+            "format": "bestvideo+bestaudio/best"
+        })
 
     try:
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+
             ydl.download([url])
 
     except Exception as e:
@@ -66,24 +84,18 @@ async def download(
             detail=str(e)
         )
 
-    final_file = None
+    files = glob.glob(
+        os.path.join(
+            DOWNLOAD_DIR,
+            f"{unique_id}*"
+        )
+    )
 
-    for file in os.listdir(DOWNLOAD_DIR):
-
-        if file.startswith(unique_id):
-
-            final_file = os.path.join(
-                DOWNLOAD_DIR,
-                file
-            )
-
-            break
-
-    if not final_file:
+    if not files:
 
         raise HTTPException(
             status_code=500,
-            detail="Download failed"
+            detail="Downloaded file not found"
         )
 
-    return FileResponse(final_file)
+    return FileResponse(files[0])
