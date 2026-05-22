@@ -14,6 +14,11 @@ DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
+@app.get("/")
+async def root():
+    return {"status": "API işləyir"}
+
+
 @app.get("/download")
 async def download(
     url: str,
@@ -27,17 +32,15 @@ async def download(
             detail="Invalid API key"
         )
 
-    ext = "mp3" if type == "audio" else "mp4"
-
-    filename = f"{uuid.uuid4()}.{ext}"
+    unique_id = str(uuid.uuid4())
 
     filepath = os.path.join(
         DOWNLOAD_DIR,
-        filename
+        unique_id
     )
 
     ydl_opts = {
-        "outtmpl": filepath,
+        "outtmpl": filepath + ".%(ext)s",
         "format": "bestaudio/best"
         if type == "audio"
         else "best"
@@ -51,7 +54,36 @@ async def download(
             "preferredquality": "192"
         }]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+    try:
 
-    return FileResponse(filepath)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    final_file = None
+
+    for file in os.listdir(DOWNLOAD_DIR):
+
+        if file.startswith(unique_id):
+
+            final_file = os.path.join(
+                DOWNLOAD_DIR,
+                file
+            )
+
+            break
+
+    if not final_file:
+
+        raise HTTPException(
+            status_code=500,
+            detail="Download failed"
+        )
+
+    return FileResponse(final_file)
