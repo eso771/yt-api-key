@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 import aiohttp
 import os
@@ -41,21 +41,35 @@ async def download(
         "User-Agent": "Mozilla/5.0"
     }
 
-    async with aiohttp.ClientSession() as session:
+    try:
 
-        async with session.post(
-            api,
-            json=payload,
-            headers=headers
-        ) as r:
+        async with aiohttp.ClientSession() as session:
 
-            data = await r.json()
+            async with session.post(
+                api,
+                json=payload,
+                headers=headers
+            ) as r:
+
+                text = await r.text()
+
+                print(text)
+
+                try:
+                    data = await r.json()
+                except:
+                    return JSONResponse({
+                        "error": text
+                    })
+
+    except Exception as e:
+
+        return JSONResponse({
+            "error": str(e)
+        })
 
     if data.get("status") != "stream":
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(data)
-        )
+        return JSONResponse(data)
 
     return RedirectResponse(data["url"])
