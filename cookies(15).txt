@@ -1,0 +1,10 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.youtube.com	TRUE	/	TRUE	1795039085	__Secure-YNID	18.YT=c6wbEe9_wD2EAtoZJ89YXfwU_Omnwma6eA0ibn6KpjaFla9qil0AvAOXat6EEF9emR5b0Zy-o__sUEO-27vSVtKbyDr2-tG74mL25xIL7QbwVhPyB_38hIkQaHoxRjfTaeQUBKKwlvxfacqsHYPQUaiUXyqcxcXLZdS1OFOGffzUmpF6dAfYLVdjkYWms_aeREDB8hU0PmS-SFVVcFefGeASAb2N0sXuOeO9F89b6RRtcEXpAfFjxS5aOhCZLOyAVfNpCfD3gNq02w7RxEu1HysWby-tmkgMjJRGBk0neRMAdmKinrTkIIN77W-_n5oDl01oLhxYqYnSLp6avqczXQ
+.youtube.com	TRUE	/	TRUE	1779488885	GPS	1
+.youtube.com	TRUE	/	TRUE	0	YSC	ht1dw-IAlUA
+.youtube.com	TRUE	/	TRUE	1795039085	VISITOR_INFO1_LIVE	yAGzLWwNVTA
+.youtube.com	TRUE	/	TRUE	1795039085	VISITOR_PRIVACY_METADATA	CgJBWhIEGgAgaQ%3D%3D
+.youtube.com	TRUE	/	TRUE	1814047086	PREF	tz=Asia.Baku
