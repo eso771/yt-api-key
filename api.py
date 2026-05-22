@@ -28,7 +28,7 @@ async def download(
             detail="Invalid API key"
         )
 
-    api = "https://co.wuk.sh/api/json"
+    api = "https://api.cobalt.tools/api/json"
 
     payload = {
         "url": url,
@@ -37,7 +37,8 @@ async def download(
 
     headers = {
         "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
     }
 
     async with aiohttp.ClientSession() as session:
@@ -54,7 +55,7 @@ async def download(
 
         raise HTTPException(
             status_code=500,
-            detail="Download failed"
+            detail=str(data)
         )
 
     return RedirectResponse(data["url"])
