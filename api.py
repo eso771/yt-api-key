@@ -1,9 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+
 import yt_dlp
-import asyncio
 import os
-import re
 import uuid
 import glob
 
@@ -12,68 +11,10 @@ app = FastAPI()
 API_KEY = os.getenv("API_KEY")
 
 DOWNLOAD_DIR = "downloads"
-COOKIES_FILE = "cookies.txt"
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-
-def ydl_opts_audio(output):
-    return {
-        "format": "bestaudio/best",
-        "outtmpl": output,
-        "geo_bypass": True,
-        "nocheckcertificate": True,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "cookiefile": COOKIES_FILE,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"]
-            }
-        }
-    }
-
-
-def ydl_opts_video(output):
-    return {
-        "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
-        "outtmpl": output,
-        "geo_bypass": True,
-        "nocheckcertificate": True,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "cookiefile": COOKIES_FILE,
-        "merge_output_format": "mp4",
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"]
-            }
-        }
-    }
-
-
-async def shell_cmd(cmd):
-    proc = await asyncio.create_subprocess_shell(
-        cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    out, err = await proc.communicate()
-
-    if err:
-        return err.decode()
-
-    return out.decode()
+cookies_file = "cookies.txt"
 
 
 @app.get("/")
@@ -89,6 +30,7 @@ async def download(
 ):
 
     if api_key != API_KEY:
+
         raise HTTPException(
             status_code=403,
             detail="Invalid API key"
@@ -96,28 +38,63 @@ async def download(
 
     unique_id = str(uuid.uuid4())
 
-    output = os.path.join(
+    output_template = os.path.join(
         DOWNLOAD_DIR,
         f"{unique_id}.%(ext)s"
     )
 
+    ydl_opts = {
+        "outtmpl": output_template,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "cookiefile": cookies_file,
+        "prefer_ffmpeg": True,
+        "concurrent_fragment_downloads": 5,
+        "retries": 10,
+        "fragment_retries": 10,
+    }
+
+    if type == "audio":
+
+        ydl_opts.update({
+            "format": "bestaudio/best",
+
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192"
+            }]
+        })
+
+    else:
+
+        ydl_opts.update({
+            "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])/best[ext=mp4]/best",
+            "merge_output_format": "mp4"
+        })
+
     try:
 
-        if type == "audio":
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
-            opts = ydl_opts_audio(output)
+            info = ydl.extract_info(url, download=False)
 
-        else:
+            expected_file = ydl.prepare_filename(info)
 
-            opts = ydl_opts_video(output)
+            if type == "audio":
+                expected_file = os.path.splitext(expected_file)[0] + ".mp3"
 
-        loop = asyncio.get_running_loop()
+            if os.path.exists(expected_file):
 
-        def run_download():
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+                return FileResponse(
+                    expected_file,
+                    filename=os.path.basename(expected_file)
+                )
 
-        await loop.run_in_executor(None, run_download)
+            ydl.download([url])
 
     except Exception as e:
 
