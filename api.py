@@ -1,72 +1,146 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 import yt_dlp
+import asyncio
 import os
+import re
 import uuid
+import glob
 
 app = FastAPI()
 
+API_KEY = os.getenv("API_KEY")
+
 DOWNLOAD_DIR = "downloads"
-COOKIES_FILE = "cookies.txt"   # <- mütləq əlavə et
+COOKIES_FILE = "cookies.txt"
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
-def get_ydl_opts(is_audio: bool):
-    base = {
-        "quiet": True,
-        "noplaylist": True,
-        "cookiefile": COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
+def ydl_opts_audio(output):
+    return {
+        "format": "bestaudio/best",
+        "outtmpl": output,
         "geo_bypass": True,
         "nocheckcertificate": True,
-        "extractor_retries": 3,
-    }
-
-    if is_audio:
-        base.update({
-            "format": "bestaudio/best",
-            "postprocessors": [{
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "cookiefile": COOKIES_FILE,
+        "postprocessors": [
+            {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
                 "preferredquality": "192",
-            }],
-        })
-    else:
-        base.update({
-            "format": "best[height<=720]",
-        })
+            }
+        ],
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        }
+    }
 
-    return base
+
+def ydl_opts_video(output):
+    return {
+        "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
+        "outtmpl": output,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "cookiefile": COOKIES_FILE,
+        "merge_output_format": "mp4",
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        }
+    }
+
+
+async def shell_cmd(cmd):
+    proc = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    out, err = await proc.communicate()
+
+    if err:
+        return err.decode()
+
+    return out.decode()
 
 
 @app.get("/")
 async def root():
-    return {"status": "OK"}
+    return {"status": "API işləyir"}
 
 
 @app.get("/download")
-async def download(url: str, type: str, api_key: str):
-    if api_key != os.getenv("API_KEY"):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+async def download(
+    url: str,
+    type: str,
+    api_key: str
+):
 
-    uid = str(uuid.uuid4())
-    output = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
+    if api_key != API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key"
+        )
 
-    is_audio = type == "audio"
+    unique_id = str(uuid.uuid4())
 
-    ydl_opts = get_ydl_opts(is_audio)
-    ydl_opts["outtmpl"] = output
+    output = os.path.join(
+        DOWNLOAD_DIR,
+        f"{unique_id}.%(ext)s"
+    )
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+
+        if type == "audio":
+
+            opts = ydl_opts_audio(output)
+
+        else:
+
+            opts = ydl_opts_video(output)
+
+        loop = asyncio.get_running_loop()
+
+        def run_download():
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+
+        await loop.run_in_executor(None, run_download)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
 
-    files = [f for f in os.listdir(DOWNLOAD_DIR) if uid in f]
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    files = glob.glob(
+        os.path.join(
+            DOWNLOAD_DIR,
+            f"{unique_id}*"
+        )
+    )
 
     if not files:
-        raise HTTPException(status_code=500, detail="File not found")
 
-    return FileResponse(os.path.join(DOWNLOAD_DIR, files[0]))
+        raise HTTPException(
+            status_code=500,
+            detail="Downloaded file not found"
+        )
+
+    return FileResponse(
+        files[0],
+        filename=os.path.basename(files[0])
+    )
